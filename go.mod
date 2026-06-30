@@ -1,4 +1,4 @@
-module github.com/gomatic/yze-ptrparam
+module github.com/gomatic/yze-go-ptrparam
 
 go 1.26.4
 

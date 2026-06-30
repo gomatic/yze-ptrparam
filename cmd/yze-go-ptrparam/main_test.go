@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/analysis"
 
-	ptrparam "github.com/gomatic/yze-ptrparam"
+	ptrparam "github.com/gomatic/yze-go-ptrparam"
 )
 
 func TestMainRunsTheAnalyzer(t *testing.T) {
