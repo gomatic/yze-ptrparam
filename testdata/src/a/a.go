@@ -3,6 +3,9 @@ package a
 import (
 	"bytes"
 	"log/slog"
+	"strings"
+
+	cli "github.com/urfave/cli/v3"
 )
 
 type Plain struct{ x int }
@@ -30,3 +33,14 @@ func aliasOK(b *BufAlias) { _ = b }
 
 // variadicPtr is flagged: a variadic pointer parameter.
 func variadicPtr(xs ...*int) { _ = xs } // want `pointer parameter`
+
+// takesBuilder is allowed: strings.Builder is only usable by pointer.
+func takesBuilder(b *strings.Builder) { _ = b }
+
+// takesCommand is allowed: the sanctioned CLI framework imposes *cli.Command
+// in every callback signature.
+func takesCommand(c *cli.Command) { _ = c }
+
+// generic is allowed: a pointer to a type parameter is a generic seam the
+// analyzer cannot judge.
+func generic[T any](cfg *T) { _ = cfg }

@@ -1,7 +1,10 @@
 // Package ptrparam provides a go/analysis analyzer enforcing the gomatic Go
 // immutability standard: function parameters are passed by value, never by
-// pointer, unless the pointed-to type is a standard-library type where a pointer
-// is the idiomatic calling convention.
+// pointer, unless a pointer is the pointed-to type's idiomatic calling
+// convention — a standard-library type conventionally passed by pointer, the
+// sanctioned CLI framework's *cli.Command (urfave/cli/v3 imposes it in every
+// Action/Before/After signature), or a type parameter (a generic seam whose
+// instantiations the analyzer cannot judge).
 package ptrparam
 
 import (
@@ -15,25 +18,30 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-// allowedPointerParams are the standard-library types conventionally passed by
-// pointer.
+// allowedPointerParams are the types conventionally passed by pointer: the
+// standard-library types where a pointer is the idiomatic calling convention,
+// plus the sanctioned CLI framework's command type, whose pointer-taking
+// callback signatures (Action/Before/After/ExitErrHandler) urfave/cli/v3
+// itself imposes on every conforming CLI.
 var allowedPointerParams = map[string]bool{
-	"log/slog.Logger":        true,
-	"testing.T":              true,
-	"testing.B":              true,
-	"testing.F":              true,
-	"testing.M":              true,
-	"sync.WaitGroup":         true,
-	"os.File":                true,
-	"net/http.Request":       true,
-	"net/http.Response":      true,
-	"bytes.Buffer":           true,
-	"text/template.Template": true,
-	"html/template.Template": true,
-	"crypto/tls.Config":      true,
-	"database/sql.DB":        true,
-	"database/sql.Tx":        true,
-	"database/sql.Stmt":      true,
+	"log/slog.Logger":                  true,
+	"testing.T":                        true,
+	"testing.B":                        true,
+	"testing.F":                        true,
+	"testing.M":                        true,
+	"sync.WaitGroup":                   true,
+	"os.File":                          true,
+	"net/http.Request":                 true,
+	"net/http.Response":                true,
+	"bytes.Buffer":                     true,
+	"strings.Builder":                  true,
+	"text/template.Template":           true,
+	"html/template.Template":           true,
+	"crypto/tls.Config":                true,
+	"database/sql.DB":                  true,
+	"database/sql.Tx":                  true,
+	"database/sql.Stmt":                true,
+	"github.com/urfave/cli/v3.Command": true,
 }
 
 // allowExtra is the configurable allow-list of additional fully-qualified
@@ -46,8 +54,8 @@ var Analyzer = newAnalyzer()
 func newAnalyzer() *analysis.Analyzer {
 	a := &analysis.Analyzer{
 		Name: "ptrparam",
-		Doc: "reports pointer parameters unless the pointed-to type is a " +
-			"standard-library type where a pointer is idiomatic",
+		Doc: "reports pointer parameters unless a pointer is the pointed-to " +
+			"type's idiomatic calling convention",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 		Run:      run,
 	}
@@ -107,7 +115,7 @@ func check(pass *analysis.Pass, allow map[string]bool, field *ast.Field) {
 	}
 	pass.Reportf(
 		star.Pos(),
-		"pointer parameter; pass by value unless it is a standard-library type where a pointer is idiomatic",
+		"pointer parameter; pass by value unless a pointer is the type's idiomatic calling convention",
 	)
 }
 
@@ -122,11 +130,17 @@ func paramType(field *ast.Field) ast.Expr {
 }
 
 // allowedPointer reports whether the pointed-to type expression names an
-// allow-listed type.
+// allow-listed type or a type parameter. A pointer to a type parameter is a
+// generic seam — the function cannot know its instantiations, and the pointer
+// is how a generic function binds to a caller-owned value (e.g. a flag
+// destination) — so it is never reported.
 func allowedPointer(allow map[string]bool, pass *analysis.Pass, x ast.Expr) bool {
-	named, ok := types.Unalias(pass.TypesInfo.TypeOf(x)).(*types.Named)
-	if !ok || named.Obj().Pkg() == nil {
+	switch t := types.Unalias(pass.TypesInfo.TypeOf(x)).(type) {
+	case *types.TypeParam:
+		return true
+	case *types.Named:
+		return t.Obj().Pkg() != nil && allow[t.Obj().Pkg().Path()+"."+t.Obj().Name()]
+	default:
 		return false
 	}
-	return allow[named.Obj().Pkg().Path()+"."+named.Obj().Name()]
 }
